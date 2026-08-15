@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "structextract"
+version = "0.1.0"
+description = "Turn unstructured documents into validated, schema-defined JSON with source grounding"
+requires-python = ">=3.10"
+authors = [
+    { name = "Ritik" }
+]
