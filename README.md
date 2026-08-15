@@ -1,6 +1,6 @@
 # StructExtract
 
-> Status: active development — M2 extraction engine complete.
+> Status: active development — M3 multi-format document loader complete.
 
 Turn unstructured documents (plain text, PDF, HTML, Markdown) into validated, schema-defined JSON — with every extracted field linked back to the exact span of source text that supports it.
 
@@ -13,19 +13,22 @@ LLM extraction is now table-stakes in enterprise AI pipelines, but most demos sk
 
 StructExtract wraps these concerns into a single small, auditable library that any Python developer can drop into a pipeline.
 
-## What works now (M2)
+## What works now (M3)
 
 | Deliverable | Notes |
 |-------------|-------|
 | `structextract/` Python package | Installable via `pip install -e .`; exposes `__version__ = "0.1.0"` |
 | `structextract/models.py` | `SourceSpan`, `FieldResult`, `ExtractionResult` Pydantic types |
 | `structextract/extractor.py` | `extract()` — prompt builder, LLM caller, span resolver, JSON parser |
+| `structextract/loader.py` | `load_document()` — loads `.txt`, `.pdf` (pdfplumber), `.html`/`.htm` (BeautifulSoup), `.md` (markdown-it-py + BeautifulSoup) → plain text |
+| `structextract/cli.py` | `structextract run` CLI command via Click |
 | `ExtractionError` | Raised on unparseable LLM responses; subclass of `RuntimeError` |
 | Anthropic + OpenAI backend | Switch via `provider="anthropic"` (default) or `provider="openai"` |
 | Source spans | Each field carries `source_span` with `start`/`end` char offsets + verbatim `quote` |
 | Confidence scoring | `"high"`, `"medium"`, or `"low"` per field |
 | `tests/test_extractor.py` | 5 unit tests; monkeypatched — no real API key required |
-| `pyproject.toml` | Hatchling build backend; `requires-python = ">=3.10"` |
+| `tests/test_loader.py` | 7 unit tests for loader; no real API key or PDF required |
+| `pyproject.toml` | Hatchling build backend; console script entry point |
 | `requirements.txt` | Pinned deps for all planned milestones |
 | `LICENSE` | MIT |
 
@@ -37,9 +40,9 @@ StructExtract wraps these concerns into a single small, auditable library that a
 | Claude (default) and OpenAI backend support | M2 |
 | Source spans — char offsets + quoted text per field | M2 |
 | Confidence scoring per extracted field | M2 |
-| `.txt`, `.pdf`, `.html`, `.md` input support | M3 |
+| `.txt`, `.pdf`, `.html`, `.md` input support | M3 ✓ |
+| CLI: `structextract run --schema invoice.py --doc scan.pdf` | M3 ✓ |
 | FastAPI REST endpoint: `POST /extract` | M4 |
-| CLI: `structextract run --schema invoice.py --doc scan.pdf` | M5 |
 | Eval harness: JSONL test set → precision/recall report | M6 |
 
 ## Architecture
@@ -60,7 +63,7 @@ StructExtract wraps these concerns into a single small, auditable library that a
               ExtractionResult (fields + source_spans)
 ```
 
-Components labelled `[M2]` are implemented and tested. `[M3]` is planned.
+Components labelled `[M2]` and `[M3]` are implemented and tested.
 
 ## Getting started (bootstrap)
 
@@ -82,7 +85,40 @@ python -c "import structextract; print(structextract.__version__)"
 pytest tests/
 ```
 
-## Usage
+## CLI usage
+
+After installing (`pip install -e .`), the `structextract` command is available:
+
+```bash
+structextract run --schema my_schema.py --doc invoice.pdf
+```
+
+Options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--schema` | required | Path to a `.py` file with exactly one `BaseModel` subclass |
+| `--doc` | required | Path to the document (`.txt`, `.pdf`, `.html`, `.htm`, `.md`) |
+| `--provider` | `anthropic` | LLM provider: `anthropic` or `openai` |
+| `--model` | provider default | Override the model name |
+
+Example schema file (`invoice_schema.py`):
+
+```python
+from pydantic import BaseModel, Field
+
+class Invoice(BaseModel):
+    vendor: str = Field(description="Name of the vendor")
+    total: float = Field(description="Total amount due")
+    due_date: str = Field(description="Payment due date")
+```
+
+```bash
+structextract run --schema invoice_schema.py --doc invoice.pdf
+# Outputs ExtractionResult JSON to stdout
+```
+
+## Python API usage
 
 ```python
 import os
@@ -118,6 +154,7 @@ result = structextract.extract(schema=Invoice, document=text, provider="openai")
 
 - Python 3.10+
 - An Anthropic API key (`ANTHROPIC_API_KEY`) or OpenAI API key (`OPENAI_API_KEY`)
+- Document-parsing libs (installed automatically via `pip install -e .`): `pdfplumber`, `beautifulsoup4`, `markdown-it-py`
 
 ## License
 
