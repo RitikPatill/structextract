@@ -1,6 +1,6 @@
 # StructExtract
 
-> Status: active development — M3 multi-format document loader complete.
+> Status: active development — M4 FastAPI REST endpoint complete.
 
 Turn unstructured documents (plain text, PDF, HTML, Markdown) into validated, schema-defined JSON — with every extracted field linked back to the exact span of source text that supports it.
 
@@ -13,7 +13,7 @@ LLM extraction is now table-stakes in enterprise AI pipelines, but most demos sk
 
 StructExtract wraps these concerns into a single small, auditable library that any Python developer can drop into a pipeline.
 
-## What works now (M3)
+## What works now (M4)
 
 | Deliverable | Notes |
 |-------------|-------|
@@ -21,13 +21,16 @@ StructExtract wraps these concerns into a single small, auditable library that a
 | `structextract/models.py` | `SourceSpan`, `FieldResult`, `ExtractionResult` Pydantic types |
 | `structextract/extractor.py` | `extract()` — prompt builder, LLM caller, span resolver, JSON parser |
 | `structextract/loader.py` | `load_document()` — loads `.txt`, `.pdf` (pdfplumber), `.html`/`.htm` (BeautifulSoup), `.md` (markdown-it-py + BeautifulSoup) → plain text |
-| `structextract/cli.py` | `structextract run` CLI command via Click |
+| `structextract/registry.py` | In-process schema registry; built-in `Invoice` and `Contact` schemas |
+| `structextract/api.py` | FastAPI app — `GET /schemas`, `POST /extract` |
+| `structextract/cli.py` | `structextract run` + `structextract serve` CLI commands via Click |
 | `ExtractionError` | Raised on unparseable LLM responses; subclass of `RuntimeError` |
 | Anthropic + OpenAI backend | Switch via `provider="anthropic"` (default) or `provider="openai"` |
 | Source spans | Each field carries `source_span` with `start`/`end` char offsets + verbatim `quote` |
 | Confidence scoring | `"high"`, `"medium"`, or `"low"` per field |
 | `tests/test_extractor.py` | 5 unit tests; monkeypatched — no real API key required |
 | `tests/test_loader.py` | 7 unit tests for loader; no real API key or PDF required |
+| `tests/test_api.py` | 3 unit tests for REST API; monkeypatched — no real API key required |
 | `pyproject.toml` | Hatchling build backend; console script entry point |
 | `requirements.txt` | Pinned deps for all planned milestones |
 | `LICENSE` | MIT |
@@ -36,34 +39,48 @@ StructExtract wraps these concerns into a single small, auditable library that a
 
 | Feature | Status |
 |---------|--------|
-| Pydantic schema definitions | M2 |
-| Claude (default) and OpenAI backend support | M2 |
-| Source spans — char offsets + quoted text per field | M2 |
-| Confidence scoring per extracted field | M2 |
+| Pydantic schema definitions | M2 ✓ |
+| Claude (default) and OpenAI backend support | M2 ✓ |
+| Source spans — char offsets + quoted text per field | M2 ✓ |
+| Confidence scoring per extracted field | M2 ✓ |
 | `.txt`, `.pdf`, `.html`, `.md` input support | M3 ✓ |
 | CLI: `structextract run --schema invoice.py --doc scan.pdf` | M3 ✓ |
-| FastAPI REST endpoint: `POST /extract` | M4 |
+| FastAPI REST endpoint: `POST /extract` | M4 ✓ |
 | Eval harness: JSONL test set → precision/recall report | M6 |
 
 ## Architecture
 
 ```
-                  ┌─────────────┐
-    document ────►│  Loader     │  txt / pdf / html / md → plain text   [M3]
-                  └──────┬──────┘
-                         │
-                  ┌──────▼──────┐
-    schema  ─────►│  Extractor  │  Pydantic schema → prompt → LLM call  [M2]
-                  └──────┬──────┘
-                         │  raw JSON + source spans
-                  ┌──────▼──────┐
-                  │  Validator  │  Pydantic parse + confidence tags      [M2]
-                  └──────┬──────┘
-                         │
-              ExtractionResult (fields + source_spans)
+  HTTP client
+      │
+      │  POST /extract          GET /schemas
+      ▼
+  ┌───────────┐
+  │  FastAPI  │  request validation, error handling          [M4]
+  │  api.py   │
+  └─────┬─────┘
+        │  schema name + document text
+        ▼
+  ┌───────────┐
+  │  Registry │  name → BaseModel class lookup               [M4]
+  └─────┬─────┘
+        │
+        ├──────────────────────────────────────┐
+        │                                      │
+  ┌─────▼──────┐                     ┌─────────▼──────┐
+  │   Loader   │  txt/pdf/html/md    │   Extractor    │  schema → prompt → LLM  [M2]
+  │            │  → plain text [M3]  └────────┬───────┘
+  └─────┬──────┘                              │  raw JSON + source spans
+        └──────────────────────────┐          │
+                                   ▼          ▼
+                              ┌──────────────────┐
+                              │    Validator     │  Pydantic parse + confidence  [M2]
+                              └────────┬─────────┘
+                                       │
+                            ExtractionResult (fields + source_spans)
 ```
 
-Components labelled `[M2]` and `[M3]` are implemented and tested.
+All components are implemented and tested (M2 – M4).
 
 ## Getting started (bootstrap)
 
@@ -149,6 +166,44 @@ To use OpenAI instead:
 ```python
 result = structextract.extract(schema=Invoice, document=text, provider="openai")
 ```
+
+## REST API usage
+
+Start the server:
+
+```bash
+structextract serve
+# or with options:
+structextract serve --host 0.0.0.0 --port 9000
+```
+
+### `GET /schemas`
+
+Returns the list of registered schema names.
+
+```bash
+curl http://127.0.0.1:8000/schemas
+# {"schemas":["Invoice","Contact"]}
+```
+
+### `POST /extract`
+
+Body fields:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `schema_name` | `str` | yes | — | Name of a registered schema (e.g. `"Invoice"`) |
+| `document` | `str` | yes | — | Plain-text document content |
+| `provider` | `str` | no | `"anthropic"` | `"anthropic"` or `"openai"` |
+| `model` | `str \| null` | no | `null` | Model name override |
+
+```bash
+curl -X POST http://127.0.0.1:8000/extract \
+  -H "Content-Type: application/json" \
+  -d '{"schema_name": "Invoice", "document": "Invoice from Acme Corp. Total: $99.50. Due: 2024-02-01."}'
+```
+
+Response is an `ExtractionResult` JSON object with `schema_name` and `fields` (each field has `value`, `source_span`, and `confidence`).
 
 ## Requirements
 
