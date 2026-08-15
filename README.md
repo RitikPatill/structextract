@@ -1,6 +1,6 @@
 # StructExtract
 
-> Status: active development — M4 FastAPI REST endpoint complete.
+> Status: active development — M5 eval harness complete.
 
 Turn unstructured documents (plain text, PDF, HTML, Markdown) into validated, schema-defined JSON — with every extracted field linked back to the exact span of source text that supports it.
 
@@ -13,7 +13,7 @@ LLM extraction is now table-stakes in enterprise AI pipelines, but most demos sk
 
 StructExtract wraps these concerns into a single small, auditable library that any Python developer can drop into a pipeline.
 
-## What works now (M4)
+## What works now (M5)
 
 | Deliverable | Notes |
 |-------------|-------|
@@ -21,9 +21,12 @@ StructExtract wraps these concerns into a single small, auditable library that a
 | `structextract/models.py` | `SourceSpan`, `FieldResult`, `ExtractionResult` Pydantic types |
 | `structextract/extractor.py` | `extract()` — prompt builder, LLM caller, span resolver, JSON parser |
 | `structextract/loader.py` | `load_document()` — loads `.txt`, `.pdf` (pdfplumber), `.html`/`.htm` (BeautifulSoup), `.md` (markdown-it-py + BeautifulSoup) → plain text |
-| `structextract/registry.py` | In-process schema registry; built-in `Invoice` and `Contact` schemas |
+| `structextract/registry.py` | In-process schema registry; built-in `Invoice`, `Contact`, and `job_posting` schemas |
 | `structextract/api.py` | FastAPI app — `GET /schemas`, `POST /extract` |
-| `structextract/cli.py` | `structextract run` + `structextract serve` CLI commands via Click |
+| `structextract/cli.py` | `structextract run` + `structextract serve` + `structextract eval` CLI commands via Click |
+| `structextract/eval.py` | `run_eval()` — JSONL → field-level precision/recall/F1; `print_report()` — Rich table output |
+| `evals/invoice_samples.jsonl` | 5 invoice eval examples |
+| `evals/job_posting_samples.jsonl` | 5 job-posting eval examples |
 | `ExtractionError` | Raised on unparseable LLM responses; subclass of `RuntimeError` |
 | Anthropic + OpenAI backend | Switch via `provider="anthropic"` (default) or `provider="openai"` |
 | Source spans | Each field carries `source_span` with `start`/`end` char offsets + verbatim `quote` |
@@ -31,6 +34,7 @@ StructExtract wraps these concerns into a single small, auditable library that a
 | `tests/test_extractor.py` | 5 unit tests; monkeypatched — no real API key required |
 | `tests/test_loader.py` | 7 unit tests for loader; no real API key or PDF required |
 | `tests/test_api.py` | 3 unit tests for REST API; monkeypatched — no real API key required |
+| `tests/test_eval.py` | 5 unit tests for eval harness; monkeypatched — no real API key required |
 | `pyproject.toml` | Hatchling build backend; console script entry point |
 | `requirements.txt` | Pinned deps for all planned milestones |
 | `LICENSE` | MIT |
@@ -46,7 +50,7 @@ StructExtract wraps these concerns into a single small, auditable library that a
 | `.txt`, `.pdf`, `.html`, `.md` input support | M3 ✓ |
 | CLI: `structextract run --schema invoice.py --doc scan.pdf` | M3 ✓ |
 | FastAPI REST endpoint: `POST /extract` | M4 ✓ |
-| Eval harness: JSONL test set → precision/recall report | M6 |
+| Eval harness: JSONL test set → precision/recall report | M5 ✓ |
 
 ## Architecture
 
@@ -80,7 +84,7 @@ StructExtract wraps these concerns into a single small, auditable library that a
                             ExtractionResult (fields + source_spans)
 ```
 
-All components are implemented and tested (M2 – M4).
+All components are implemented and tested (M2 – M5).
 
 ## Getting started (bootstrap)
 
@@ -116,6 +120,29 @@ Options:
 |------|---------|-------------|
 | `--schema` | required | Path to a `.py` file with exactly one `BaseModel` subclass |
 | `--doc` | required | Path to the document (`.txt`, `.pdf`, `.html`, `.htm`, `.md`) |
+| `--provider` | `anthropic` | LLM provider: `anthropic` or `openai` |
+| `--model` | provider default | Override the model name |
+
+### Eval command
+
+Run extraction against a JSONL dataset and print a field-level precision/recall/F1 report:
+
+```bash
+structextract eval --schema Invoice --dataset evals/invoice_samples.jsonl
+```
+
+Each line of the JSONL file must have `"doc"` and `"expected"` keys:
+
+```json
+{"doc": "INVOICE #INV-001\nVendor: Acme Corp\nTotal: $1,200.00\nDue: 2024-03-31", "expected": {"vendor_name": "Acme Corp", "invoice_number": "INV-001", "total_amount": "$1,200.00", "due_date": "2024-03-31"}}
+```
+
+Options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--schema` | required | Registered schema name (e.g. `Invoice`, `job_posting`) |
+| `--dataset` | required | Path to the JSONL eval file |
 | `--provider` | `anthropic` | LLM provider: `anthropic` or `openai` |
 | `--model` | provider default | Override the model name |
 
