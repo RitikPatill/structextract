@@ -33,5 +33,15 @@ class Contact(BaseModel):
     company: str | None = Field(default=None, description="Company or organisation name")
 
 
+class JobPosting(BaseModel):
+    """Schema for extracting structured data from job postings."""
+    job_title: str | None = Field(default=None, description="The job title or role name")
+    company: str | None = Field(default=None, description="Hiring company name")
+    location: str | None = Field(default=None, description="Job location or 'Remote'")
+    salary_range: str | None = Field(default=None, description="Salary range if mentioned, else empty string")
+    required_experience: str | None = Field(default=None, description="Years or type of experience required")
+
+
 register("Invoice", Invoice)
 register("Contact", Contact)
+register("job_posting", JobPosting)

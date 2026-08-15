@@ -6,6 +6,8 @@ import sys
 import click
 from pydantic import BaseModel
 
+from structextract import registry
+from structextract.eval import print_report, run_eval
 from structextract.extractor import extract
 from structextract.loader import load_document
 
@@ -50,6 +52,20 @@ def run_cmd(schema_path: str, doc_path: str, provider: str, model: str | None) -
     text = load_document(doc_path)
     result = extract(schema_class, text, provider=provider, model=model)
     click.echo(result.model_dump_json(indent=2))
+
+
+@cli.command("eval")
+@click.option("--schema", "schema_name", required=True, help="Registered schema name (e.g. 'Invoice', 'job_posting').")
+@click.option("--dataset", "dataset_path", required=True, type=click.Path(exists=True), help="Path to a JSONL eval dataset.")
+@click.option("--provider", default="anthropic", show_default=True, help="LLM provider: 'anthropic' or 'openai'.")
+@click.option("--model", default=None, help="Model name override (uses provider default if omitted).")
+def eval_cmd(schema_name: str, dataset_path: str, provider: str, model: str | None) -> None:
+    """Run extraction eval on a JSONL dataset and print precision/recall/F1."""
+    if registry.get(schema_name) is None:
+        available = ", ".join(registry.list_schemas())
+        raise click.UsageError(f"Unknown schema {schema_name!r}. Available: {available}")
+    report = run_eval(dataset_path, schema_name, provider=provider, model=model)
+    print_report(report)
 
 
 @cli.command("serve")
