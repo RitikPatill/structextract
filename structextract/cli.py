@@ -50,3 +50,12 @@ def run_cmd(schema_path: str, doc_path: str, provider: str, model: str | None) -
     text = load_document(doc_path)
     result = extract(schema_class, text, provider=provider, model=model)
     click.echo(result.model_dump_json(indent=2))
+
+
+@cli.command("serve")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Bind host.")
+@click.option("--port", default=8000, show_default=True, help="Bind port.")
+def serve_cmd(host: str, port: int) -> None:
+    """Start the FastAPI extraction server."""
+    import uvicorn
+    uvicorn.run("structextract.api:app", host=host, port=port, reload=False)
