@@ -1,0 +1,10 @@
+Invoice #INV-2024-001
+Date: 2024-01-15
+Vendor: Acme Corp
+Amount Due: $1,250.00
+
+Line Items:
+- Widget A x10: $500.00
+- Widget B x5: $750.00
+
+Payment due within 30 days.

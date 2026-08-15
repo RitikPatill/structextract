@@ -2,6 +2,9 @@
 anthropic>=0.28,<0.29
 openai>=1.30,<1.31
 
+# CLI
+click>=8.1,<9.0
+
 # Document parsing (used in M3 — listed here so the dep set is declared once)
 pdfplumber>=0.11,<0.12
 beautifulsoup4>=4.12,<4.13
