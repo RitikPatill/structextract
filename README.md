@@ -1,228 +1,64 @@
-# StructExtract
+# StructExtract — LLM Structured Extraction with Source Grounding & Evals
 
-> Status: active development — M5 eval harness complete.
+> Extract typed, schema-defined data from any document with LLMs, source citations, and a built-in eval harness.
 
-Turn unstructured documents (plain text, PDF, HTML, Markdown) into validated, schema-defined JSON — with every extracted field linked back to the exact span of source text that supports it.
+<!-- TODO: replace with a 5-10 second demo gif. Record with ScreenToGif on
+     Windows or peek on macOS. Save to docs/demo.gif and update path here. -->
+![demo](docs/demo.gif)
 
-## The problem
+## What it is
 
-LLM extraction is now table-stakes in enterprise AI pipelines, but most demos skip two critical production concerns:
+StructExtract turns unstructured documents — plain text, PDF, HTML, Markdown — into validated, schema-defined JSON using an LLM backend. Every extracted field carries a `source_span` (character offsets and a verbatim quote) so you can trace exactly where in the source document each value came from. It also ships a `confidence` rating per field and a built-in eval harness that runs a JSONL test set through the extractor and returns field-level precision, recall, and F1.
 
-1. **Provenance** — where in the document does each value come from?
-2. **Reliability** — how do I know the prompt isn't regressing between model updates?
+Two production concerns that most extraction demos skip motivated the project: *provenance* (which part of the document supports this value?) and *reliability* (is extraction getting worse between model updates?). StructExtract wraps both into a single small, auditable library. You define schemas with ordinary Pydantic models, run extraction with a one-line call or the CLI, and track accuracy with the eval command.
 
-StructExtract wraps these concerns into a single small, auditable library that any Python developer can drop into a pipeline.
-
-## What works now (M5)
-
-| Deliverable | Notes |
-|-------------|-------|
-| `structextract/` Python package | Installable via `pip install -e .`; exposes `__version__ = "0.1.0"` |
-| `structextract/models.py` | `SourceSpan`, `FieldResult`, `ExtractionResult` Pydantic types |
-| `structextract/extractor.py` | `extract()` — prompt builder, LLM caller, span resolver, JSON parser |
-| `structextract/loader.py` | `load_document()` — loads `.txt`, `.pdf` (pdfplumber), `.html`/`.htm` (BeautifulSoup), `.md` (markdown-it-py + BeautifulSoup) → plain text |
-| `structextract/registry.py` | In-process schema registry; built-in `Invoice`, `Contact`, and `job_posting` schemas |
-| `structextract/api.py` | FastAPI app — `GET /schemas`, `POST /extract` |
-| `structextract/cli.py` | `structextract run` + `structextract serve` + `structextract eval` CLI commands via Click |
-| `structextract/eval.py` | `run_eval()` — JSONL → field-level precision/recall/F1; `print_report()` — Rich table output |
-| `evals/invoice_samples.jsonl` | 5 invoice eval examples |
-| `evals/job_posting_samples.jsonl` | 5 job-posting eval examples |
-| `ExtractionError` | Raised on unparseable LLM responses; subclass of `RuntimeError` |
-| Anthropic + OpenAI backend | Switch via `provider="anthropic"` (default) or `provider="openai"` |
-| Source spans | Each field carries `source_span` with `start`/`end` char offsets + verbatim `quote` |
-| Confidence scoring | `"high"`, `"medium"`, or `"low"` per field |
-| `tests/test_extractor.py` | 5 unit tests; monkeypatched — no real API key required |
-| `tests/test_loader.py` | 7 unit tests for loader; no real API key or PDF required |
-| `tests/test_api.py` | 3 unit tests for REST API; monkeypatched — no real API key required |
-| `tests/test_eval.py` | 5 unit tests for eval harness; monkeypatched — no real API key required |
-| `pyproject.toml` | Hatchling build backend; console script entry point |
-| `requirements.txt` | Pinned deps for all planned milestones |
-| `LICENSE` | MIT |
-
-## Roadmap
-
-| Feature | Status |
-|---------|--------|
-| Pydantic schema definitions | M2 ✓ |
-| Claude (default) and OpenAI backend support | M2 ✓ |
-| Source spans — char offsets + quoted text per field | M2 ✓ |
-| Confidence scoring per extracted field | M2 ✓ |
-| `.txt`, `.pdf`, `.html`, `.md` input support | M3 ✓ |
-| CLI: `structextract run --schema invoice.py --doc scan.pdf` | M3 ✓ |
-| FastAPI REST endpoint: `POST /extract` | M4 ✓ |
-| Eval harness: JSONL test set → precision/recall report | M5 ✓ |
-
-## Architecture
-
-```
-  HTTP client
-      │
-      │  POST /extract          GET /schemas
-      ▼
-  ┌───────────┐
-  │  FastAPI  │  request validation, error handling          [M4]
-  │  api.py   │
-  └─────┬─────┘
-        │  schema name + document text
-        ▼
-  ┌───────────┐
-  │  Registry │  name → BaseModel class lookup               [M4]
-  └─────┬─────┘
-        │
-        ├──────────────────────────────────────┐
-        │                                      │
-  ┌─────▼──────┐                     ┌─────────▼──────┐
-  │   Loader   │  txt/pdf/html/md    │   Extractor    │  schema → prompt → LLM  [M2]
-  │            │  → plain text [M3]  └────────┬───────┘
-  └─────┬──────┘                              │  raw JSON + source spans
-        └──────────────────────────┐          │
-                                   ▼          ▼
-                              ┌──────────────────┐
-                              │    Validator     │  Pydantic parse + confidence  [M2]
-                              └────────┬─────────┘
-                                       │
-                            ExtractionResult (fields + source_spans)
-```
-
-All components are implemented and tested (M2 – M5).
-
-## Getting started (bootstrap)
+## Quickstart
 
 ```bash
-# 1. Install build backend (one-time)
-pip install hatchling
+git clone https://github.com/RitikPatill/structextract.git
+cd structextract
 
-# 2. Install in editable mode
+# Install the package and all dependencies
 pip install -e .
 
-# 3. Install runtime + dev deps
-pip install -r requirements.txt
-
-# 4. Verify the package imports
+# Confirm the package version
 python -c "import structextract; print(structextract.__version__)"
 # 0.1.0
 
-# 5. Run tests
+# Run the test suite (no API key required — all LLM calls are monkeypatched)
+pip install pytest
 pytest tests/
+
+# Set your LLM provider key, then extract from a document
+export ANTHROPIC_API_KEY=sk-ant-...
+structextract run --schema <schema_file.py> --doc <document.pdf>
 ```
 
-## CLI usage
+## Usage
 
-After installing (`pip install -e .`), the `structextract` command is available:
+**CLI — extract fields from a document:**
 
 ```bash
-structextract run --schema my_schema.py --doc invoice.pdf
+structextract run --schema invoice_schema.py --doc scan.pdf
 ```
 
-Options:
+`--schema` points to a `.py` file containing exactly one `BaseModel` subclass. `--doc` accepts `.txt`, `.pdf`, `.html`, `.htm`, or `.md`. Add `--provider openai` and `export OPENAI_API_KEY=...` to switch backends.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | required | Path to a `.py` file with exactly one `BaseModel` subclass |
-| `--doc` | required | Path to the document (`.txt`, `.pdf`, `.html`, `.htm`, `.md`) |
-| `--provider` | `anthropic` | LLM provider: `anthropic` or `openai` |
-| `--model` | provider default | Override the model name |
-
-### Eval command
-
-Run extraction against a JSONL dataset and print a field-level precision/recall/F1 report:
+**CLI — run an eval against a JSONL dataset:**
 
 ```bash
 structextract eval --schema Invoice --dataset evals/invoice_samples.jsonl
 ```
 
-Each line of the JSONL file must have `"doc"` and `"expected"` keys:
+This prints a Rich table with per-field precision, recall, F1, and an overall micro-averaged score. Each row in the JSONL file needs a `"doc"` string and an `"expected"` object with field-value pairs.
 
-```json
-{"doc": "INVOICE #INV-001\nVendor: Acme Corp\nTotal: $1,200.00\nDue: 2024-03-31", "expected": {"vendor_name": "Acme Corp", "invoice_number": "INV-001", "total_amount": "$1,200.00", "due_date": "2024-03-31"}}
-```
-
-Options:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | required | Registered schema name (e.g. `Invoice`, `job_posting`) |
-| `--dataset` | required | Path to the JSONL eval file |
-| `--provider` | `anthropic` | LLM provider: `anthropic` or `openai` |
-| `--model` | provider default | Override the model name |
-
-Example schema file (`invoice_schema.py`):
-
-```python
-from pydantic import BaseModel, Field
-
-class Invoice(BaseModel):
-    vendor: str = Field(description="Name of the vendor")
-    total: float = Field(description="Total amount due")
-    due_date: str = Field(description="Payment due date")
-```
-
-```bash
-structextract run --schema invoice_schema.py --doc invoice.pdf
-# Outputs ExtractionResult JSON to stdout
-```
-
-## Python API usage
-
-```python
-import os
-from pydantic import BaseModel, Field
-import structextract
-
-# 1. Define your schema
-class Invoice(BaseModel):
-    vendor: str = Field(description="Name of the vendor or supplier")
-    total: float = Field(description="Total amount due")
-    due_date: str = Field(description="Payment due date (ISO 8601)")
-
-# 2. Extract
-os.environ["ANTHROPIC_API_KEY"] = "sk-ant-..."   # or set in environment
-result = structextract.extract(schema=Invoice, document="Invoice from Acme Corp. Amount due: $99.50. Due: 2024-02-01.")
-
-# 3. Inspect
-for name, field in result.fields.items():
-    print(f"{name}: {field.value!r}  [{field.confidence}]")
-    if field.source_span:
-        print(f"  ↳ chars {field.source_span.start}–{field.source_span.end}: {field.source_span.quote!r}")
-```
-
-If the LLM returns malformed JSON, `extract()` raises `structextract.extractor.ExtractionError` (a `RuntimeError` subclass).
-
-To use OpenAI instead:
-
-```python
-result = structextract.extract(schema=Invoice, document=text, provider="openai")
-```
-
-## REST API usage
-
-Start the server:
+**CLI — start the REST server:**
 
 ```bash
 structextract serve
-# or with options:
-structextract serve --host 0.0.0.0 --port 9000
 ```
 
-### `GET /schemas`
-
-Returns the list of registered schema names.
-
-```bash
-curl http://127.0.0.1:8000/schemas
-# {"schemas":["Invoice","Contact"]}
-```
-
-### `POST /extract`
-
-Body fields:
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `schema_name` | `str` | yes | — | Name of a registered schema (e.g. `"Invoice"`) |
-| `document` | `str` | yes | — | Plain-text document content |
-| `provider` | `str` | no | `"anthropic"` | `"anthropic"` or `"openai"` |
-| `model` | `str \| null` | no | `null` | Model name override |
+**REST API — extract via HTTP:**
 
 ```bash
 curl -X POST http://127.0.0.1:8000/extract \
@@ -230,14 +66,85 @@ curl -X POST http://127.0.0.1:8000/extract \
   -d '{"schema_name": "Invoice", "document": "Invoice from Acme Corp. Total: $99.50. Due: 2024-02-01."}'
 ```
 
-Response is an `ExtractionResult` JSON object with `schema_name` and `fields` (each field has `value`, `source_span`, and `confidence`).
+`GET /schemas` returns the list of registered schema names (`Invoice`, `Contact`, `job_posting` are built in).
 
-## Requirements
+**Python API — embed in a pipeline:**
 
-- Python 3.10+
-- An Anthropic API key (`ANTHROPIC_API_KEY`) or OpenAI API key (`OPENAI_API_KEY`)
-- Document-parsing libs (installed automatically via `pip install -e .`): `pdfplumber`, `beautifulsoup4`, `markdown-it-py`
+```python
+from pydantic import BaseModel, Field
+import structextract
+
+class Invoice(BaseModel):
+    vendor: str = Field(description="Name of the vendor or supplier")
+    total: float = Field(description="Total amount due")
+    due_date: str = Field(description="Payment due date (ISO 8601)")
+
+result = structextract.extract(schema=Invoice, document=open("invoice.txt").read())
+for name, field in result.fields.items():
+    print(f"{name}: {field.value!r}  [{field.confidence}]")
+    if field.source_span:
+        print(f"  chars {field.source_span.start}–{field.source_span.end}: {field.source_span.quote!r}")
+```
+
+## Architecture
+
+```
+  CLI / HTTP client
+        │
+        ▼
+  ┌───────────┐     ┌──────────┐
+  │  FastAPI  │────▶│ Registry │  schema name → BaseModel class
+  │  api.py   │     └────┬─────┘
+  └───────────┘          │
+        │                ▼
+        │         ┌────────────┐     ┌─────────────────────────┐
+        │         │   Loader   │────▶│       Extractor         │
+        │         │  loader.py │     │  prompt → LLM → JSON    │
+        │         └────────────┘     │  → span resolver        │
+        │                            └───────────┬─────────────┘
+        │                                        │
+        │                            ExtractionResult
+        │                        (fields + source_spans + confidence)
+        │
+  ┌─────▼──────┐
+  │    Eval    │  JSONL test set → precision / recall / F1
+  │   eval.py  │
+  └────────────┘
+```
+
+## Project structure
+
+```
+structextract/          Python package
+  models.py             SourceSpan, FieldResult, ExtractionResult types
+  extractor.py          extract() — prompt builder, LLM caller, span resolver
+  loader.py             load_document() — txt / pdf / html / md → plain text
+  registry.py           In-process schema registry + built-in schemas
+  api.py                FastAPI app (GET /schemas, POST /extract)
+  cli.py                Click CLI (run, serve, eval subcommands)
+  eval.py               run_eval(), print_report() — Rich table output
+tests/                  Unit tests (monkeypatched; no API key required)
+evals/                  JSONL eval sets for Invoice and job_posting schemas
+scripts/                make_demo.py — generates demo SVG without an API key
+pyproject.toml          Hatchling build config + console script entry point
+requirements.txt        Pinned runtime and dev dependencies
+```
+
+## Roadmap
+
+- [ ] Streaming extraction — yield fields as the LLM produces them rather than waiting for a full response
+- [ ] Nested schema support — allow `BaseModel` fields that are themselves models
+- [ ] PDF bounding-box spans — map `source_span` offsets back to page/line coordinates in PDF inputs
+- [ ] Schema registry persistence — register schemas from YAML or a config file without writing Python
+- [ ] OpenTelemetry tracing — emit spans for each extraction call to integrate with existing observability stacks
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see LICENSE.
+
+---
+
+Built autonomously by [autodev](https://github.com/RitikPatill/autodev),
+a multi-agent orchestrator I designed. Each commit in this repo was
+authored by me; the implementation work was performed by Sonnet under
+the orchestrator's control. Read the orchestrator's README to see how.
