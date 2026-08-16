@@ -1,5 +1,9 @@
 # StructExtract — LLM Structured Extraction with Source Grounding & Evals
 
+
+> **Video walkthrough:** https://youtu.be/K8UPkchNYeo
+> **60-second overview:** https://youtu.be/_RUqJlXaGvA
+
 > Extract typed, schema-defined data from any document with LLMs, source citations, and a built-in eval harness.
 
 <!-- TODO: replace with a 5-10 second demo gif. Record with ScreenToGif on
